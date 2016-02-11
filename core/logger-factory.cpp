@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /**
- * Copyright (c) 2014-2015,  Regents of the University of California,
+ * Copyright (c) 2014-2016,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -26,6 +26,11 @@
 #include "logger-factory.hpp"
 
 #include <boost/range/adaptor/map.hpp>
+
+#ifdef HAVE_BOOST_LOG
+#include <boost/log/core.hpp>
+#include <boost/log/expressions.hpp>
+#endif // HAVE_BOOST_LOG
 
 #ifdef HAVE_CUSTOM_LOGGER
 #error "This file should not be compiled when custom logger is used"
@@ -53,6 +58,25 @@ LoggerFactory::LoggerFactory()
   m_levelNames["DEBUG"] = LOG_DEBUG;
   m_levelNames["TRACE"] = LOG_TRACE;
   m_levelNames["ALL"] = LOG_ALL;
+
+#ifdef HAVE_BOOST_LOG
+  auto backend = boost::make_shared<boost::log::sinks::text_ostream_backend>();
+  backend->auto_flush(true);
+  backend->add_stream(boost::shared_ptr<std::ostream>(&std::clog, bind([]{})));
+
+  m_sink = boost::make_shared<Sink>(backend);
+  m_sink->set_formatter(boost::log::expressions::stream << boost::log::expressions::message);
+  boost::log::core::get()->add_sink(m_sink);
+#endif // HAVE_BOOST_LOG
+}
+
+LoggerFactory::~LoggerFactory()
+{
+#ifdef HAVE_BOOST_LOG
+  boost::log::core::get()->remove_sink(m_sink);
+  m_sink->stop();
+  m_sink->flush();
+#endif // HAVE_BOOST_LOG
 }
 
 void
@@ -171,6 +195,14 @@ LoggerFactory::setDefaultLevel(LogLevel level)
     // std::cerr << "changing " << i->first << " to default " << m_defaultLevel << std::endl;
     logger.second.setLogLevel(m_defaultLevel);
   }
+}
+
+void
+LoggerFactory::flushBackend()
+{
+#ifdef HAVE_BOOST_LOG
+  m_sink->flush();
+#endif // HAVE_BOOST_LOG
 }
 
 Logger&

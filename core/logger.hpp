@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /**
- * Copyright (c) 2014-2015,  Regents of the University of California,
+ * Copyright (c) 2014-2016,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -32,7 +32,12 @@
 #include "custom-logger.hpp"
 #else
 
+#ifdef HAVE_BOOST_LOG
+#include <boost/log/common.hpp>
+#include <boost/log/sources/logger.hpp>
+#else
 #include <mutex>
+#endif // HAVE_BOOST_LOG
 
 namespace nfd {
 
@@ -91,6 +96,11 @@ public:
   static const char*
   now();
 
+public:
+#ifdef HAVE_BOOST_LOG
+  boost::log::sources::logger boostLogger;
+#endif // HAVE_BOOST_LOG
+
 private:
   std::string m_moduleName;
   LogLevel    m_enabledLogLevel;
@@ -130,16 +140,30 @@ nfd::Logger& cls<specialization>::g_logger = nfd::LoggerFactory::create(name)
 template<>                                                                 \
 nfd::Logger& cls<s1, s2>::g_logger = nfd::LoggerFactory::create(name)
 
+#ifndef HAVE_BOOST_LOG
 extern std::mutex g_logMutex;
+#endif
 
+#define NFD_LOG_LINE(msg, expression)             \
+  ::nfd::Logger::now() << " "#msg": "             \
+  << "[" << g_logger  << "] " << expression
+
+#ifdef HAVE_BOOST_LOG
+#define NFD_LOG(level, msg, expression)                                 \
+  do {                                                                  \
+    if (g_logger.isEnabled(::nfd::LOG_##level)) {                       \
+      BOOST_LOG(g_logger.boostLogger) << NFD_LOG_LINE(msg, expression); \
+    }                                                                   \
+  } while (false)
+#else
 #define NFD_LOG(level, msg, expression)                          \
-do {                                                             \
-  if (g_logger.isEnabled(::nfd::LOG_##level)) {                  \
-    std::lock_guard<std::mutex> lock(::nfd::g_logMutex);         \
-    std::clog << ::nfd::Logger::now() << " "#msg": "             \
-              << "[" << g_logger << "] " << expression << "\n";  \
-  }                                                              \
-} while (false)
+  do {                                                           \
+    if (g_logger.isEnabled(::nfd::LOG_##level)) {                \
+      std::lock_guard<std::mutex> lock(::nfd::g_logMutex);       \
+      std::clog << NFD_LOG_LINE(msg, expression) << "\n";        \
+    }                                                            \
+  } while (false)
+#endif // HAVE_BOOST_LOG
 
 #define NFD_LOG_TRACE(expression) NFD_LOG(TRACE, TRACE,   expression)
 #define NFD_LOG_DEBUG(expression) NFD_LOG(DEBUG, DEBUG,   expression)
